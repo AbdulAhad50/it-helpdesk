@@ -1,0 +1,699 @@
+{
+  "name": "Helpdesk B: Update or resolve complaint sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## B: Update / resolve complaint → exact sheet row\n1. Edit **Config** (Spreadsheet ID, sheetName).\n2. Attach the same credentials as workflow A.\n3. The row is found by Complaint ID and updated by its row number, only if EXACTLY one row matches.\nZero rows → 404 row_missing, several → 409 duplicate_rows. This workflow never inserts a row.\nSee n8n/README.md.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "a5a2021c-697f-50bd-9eaf-79be3d459614",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "helpdesk/complaint-updated",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cb3f25af-ed46-5696-9d73-0455b677bb92",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "2ecc5dc4-e3c0-5d12-b7a5-0153e748d35b",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Helpdesk webhook secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fb5574ff-fafc-584b-a76f-d1ec7e9120da",
+              "name": "spreadsheetId",
+              "value": "PASTE_SPREADSHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "270e41ec-bdc3-5c35-b429-d3b6a8971564",
+              "name": "sheetName",
+              "value": "IT Complaints",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "1450428a-55d4-5194-8246-560bb914b8a1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate the payload sent by the helpdesk app. Reject anything unexpected before touching the sheet.\nconst COLUMNS = [\"Complaint ID\", \"User Name\", \"Department\", \"Problem Category\", \"Problem Description\", \"Priority\", \"Received Date\", \"Received Time\", \"Solved Date\", \"Resolve Time\", \"Solve Duration\", \"Work Stuck Reason\", \"Status\", \"Resolution Notes\", \"Resolved By\", \"Last Updated\"];\nconst item = $input.first().json;\nconst body = item.body || {};\nconst fail = (reason) => [{ json: { valid: false, reason, spreadsheetId: item.spreadsheetId, sheetName: item.sheetName, eventId: body.eventId ?? null, complaintId: body.complaintId ?? null } }];\nif (body.schemaVersion !== 1) return fail('unsupported schemaVersion');\nif (!['complaint.updated', 'complaint.resolved'].includes(body.eventType)) return fail('unexpected eventType');\nif (typeof body.complaintId !== 'string' || !/^IT-\\d{8}-[A-HJKMNP-Z2-9]{4}$/.test(body.complaintId)) return fail('invalid complaintId');\nif (typeof body.eventId !== 'string' || !body.eventId.startsWith(body.eventType + ':' + body.complaintId)) return fail('eventId does not match event');\nconst row = body.row;\nif (!row || typeof row !== 'object') return fail('row missing');\nfor (const c of COLUMNS) {\n  if (typeof row[c] !== 'string') return fail('column missing or not text: ' + c);\n  if (row[c].length > 4000) return fail('column too long: ' + c);\n}\nif (row['Complaint ID'] !== body.complaintId) return fail('row Complaint ID does not match complaintId');\nreturn [{ json: { valid: true, spreadsheetId: item.spreadsheetId, sheetName: item.sheetName, eventId: body.eventId, complaintId: body.complaintId, eventType: body.eventType, row } }];\n"
+      },
+      "id": "d039246a-cd84-5c7e-8997-592fe2e591e4",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "44c205e1-0494-599a-868c-71be9fdf19d1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6ae70cce-f3ae-5168-a34d-82175ae67dc2",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'invalid_payload', message: $json.reason, eventId: $json.eventId, complaintId: $json.complaintId }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "7c81ff42-8536-5dcc-b03e-79c3a5733566",
+      "name": "Respond Invalid Payload",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.sheetName }}"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Complaint ID",
+              "lookupValue": "={{ $json.complaintId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0a5e2c9-3dd3-5d3d-afe0-fadb4e36e830",
+      "name": "Find Rows by Complaint ID",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        960,
+        300
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Helpdesk Google service account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count how many sheet rows carry this exact Complaint ID.\nconst v = $('Validate Payload').first().json;\nconst rows = $input.all().map((i) => i.json).filter((r) => r && String(r['Complaint ID'] ?? '').trim() === v.complaintId);\nconst matchCount = rows.length;\nconst action = matchCount === 0 ? 'missing' : matchCount === 1 ? 'update' : 'duplicate';\nreturn [{ json: { action, matchCount, rowNumber: rows[0] ? (rows[0].row_number ?? null) : null, complaintId: v.complaintId, eventId: v.eventId, spreadsheetId: v.spreadsheetId, sheetName: v.sheetName } }];\n"
+      },
+      "id": "5f1ee1ff-42b7-55a0-a22e-975756601d9a",
+      "name": "Evaluate Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3b7519b1-ee28-53e6-81f5-2391ebdfcbca",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "237dbe30-e87b-5fbd-95b3-9559c6527624",
+      "name": "Can Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.sheetName }}"
+        },
+        "operation": "update",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.rowNumber }}",
+            "Department": "={{ $('Validate Payload').first().json.row[\"Department\"] }}",
+            "Problem Category": "={{ $('Validate Payload').first().json.row[\"Problem Category\"] }}",
+            "Priority": "={{ $('Validate Payload').first().json.row[\"Priority\"] }}",
+            "Solved Date": "={{ $('Validate Payload').first().json.row[\"Solved Date\"] }}",
+            "Resolve Time": "={{ $('Validate Payload').first().json.row[\"Resolve Time\"] }}",
+            "Solve Duration": "={{ $('Validate Payload').first().json.row[\"Solve Duration\"] }}",
+            "Work Stuck Reason": "={{ $('Validate Payload').first().json.row[\"Work Stuck Reason\"] }}",
+            "Status": "={{ $('Validate Payload').first().json.row[\"Status\"] }}",
+            "Resolution Notes": "={{ $('Validate Payload').first().json.row[\"Resolution Notes\"] }}",
+            "Resolved By": "={{ $('Validate Payload').first().json.row[\"Resolved By\"] }}",
+            "Last Updated": "={{ $('Validate Payload').first().json.row[\"Last Updated\"] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Complaint ID",
+              "displayName": "Complaint ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "User Name",
+              "displayName": "User Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Department",
+              "displayName": "Department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Problem Category",
+              "displayName": "Problem Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Problem Description",
+              "displayName": "Problem Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Received Date",
+              "displayName": "Received Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Received Time",
+              "displayName": "Received Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Solved Date",
+              "displayName": "Solved Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resolve Time",
+              "displayName": "Resolve Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Solve Duration",
+              "displayName": "Solve Duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Work Stuck Reason",
+              "displayName": "Work Stuck Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resolution Notes",
+              "displayName": "Resolution Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resolved By",
+              "displayName": "Resolved By",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "6c00d307-416d-59d3-bed3-46aacab25d2f",
+      "name": "Update Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1680,
+        200
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Helpdesk Google service account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, result: 'updated', eventId: $('Validate Payload').first().json.eventId, complaintId: $('Validate Payload').first().json.complaintId, rowNumber: $('Evaluate Matches').first().json.rowNumber }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "6a05eb77-807a-574f-90c6-fe97e61953af",
+      "name": "Respond Updated",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8247d44f-e9a8-5397-98f6-ad416a94a8ee",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "missing",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2769ced9-1636-5265-aee1-eb4aebebd737",
+      "name": "Row Missing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'row_missing', message: 'No sheet row has this Complaint ID. Reconciliation is needed; no row was inserted.', eventId: $json.eventId, complaintId: $json.complaintId }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "b61dd150-e669-5599-b44a-9bd9a8700069",
+      "name": "Respond Row Missing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'duplicate_rows', message: $json.matchCount + ' rows share this Complaint ID. Nothing was updated.', eventId: $json.eventId, complaintId: $json.complaintId }) }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "61c59e9a-e9b7-5c6a-9443-a7e8bb00ca1b",
+      "name": "Respond Duplicate Rows",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'sheets_error', message: String(typeof $json.error === 'string' ? $json.error : (($json.error && $json.error.message) || 'Google Sheets request failed')).slice(0, 200), eventId: $('Validate Payload').first().json.eventId, complaintId: $('Validate Payload').first().json.complaintId }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "20b444c0-3d06-5b34-8288-068752c5dc56",
+      "name": "Respond Sheets Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Find Rows by Complaint ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Rows by Complaint ID": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Matches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Sheets Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Matches": {
+      "main": [
+        [
+          {
+            "node": "Can Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Update?": {
+      "main": [
+        [
+          {
+            "node": "Update Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Row Missing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Row": {
+      "main": [
+        [
+          {
+            "node": "Respond Updated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Sheets Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Row Missing?": {
+      "main": [
+        [
+          {
+            "node": "Respond Row Missing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Duplicate Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

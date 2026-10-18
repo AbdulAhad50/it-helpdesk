@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import { NextRequest } from "next/server";
+import { SESSION_COOKIE } from "@/lib/session-config";
+import { GET as listGet } from "@/app/api/admin/complaints/route";
+import { GET as oneGet, PATCH as onePatch } from "@/app/api/admin/complaints/[id]/route";
+import { POST as resolvePost } from "@/app/api/admin/complaints/[id]/resolve/route";
+import { POST as syncPost } from "@/app/api/admin/complaints/[id]/sync/route";
+import { GET as dashboardGet } from "@/app/api/admin/dashboard/route";
+import { GET as auditGet } from "@/app/api/admin/audit-logs/route";
+
+const ID = "IT-20261018-A7K2";
+const ctx = { params: Promise.resolve({ id: ID }) };
+const url = (p: string) => `http://localhost:3000${p}`;
+const same = { origin: "http://localhost:3000", "x-forwarded-host": "localhost:3000", "content-type": "application/json" };
+const evil = { origin: "https://evil.example", "x-forwarded-host": "localhost:3000", "content-type": "application/json", cookie: `${SESSION_COOKIE}=abc` };
+
+const reads: [string, () => Promise<Response>][] = [
+  ["GET /complaints", () => listGet(new NextRequest(url("/api/admin/complaints")))],
+  ["GET /complaints/[id]", () => oneGet(new NextRequest(url(`/api/admin/complaints/${ID}`)), ctx)],
+  ["GET /dashboard", () => dashboardGet(new NextRequest(url("/api/admin/dashboard")))],
+  ["GET /audit-logs", () => auditGet(new NextRequest(url("/api/admin/audit-logs")))],
+];
+const writes: [string, (headers: Record<string, string>) => Promise<Response>][] = [
+  ["PATCH /complaints/[id]", (h) => onePatch(new NextRequest(url(`/api/admin/complaints/${ID}`), { method: "PATCH", headers: h, body: JSON.stringify({ version: 1, priority: "Low" }) }), ctx)],
+  ["POST /complaints/[id]/resolve", (h) => resolvePost(new NextRequest(url(`/api/admin/complaints/${ID}/resolve`), { method: "POST", headers: h, body: "{}" }), ctx)],
+  ["POST /complaints/[id]/sync", (h) => syncPost(new NextRequest(url(`/api/admin/complaints/${ID}/sync`), { method: "POST", headers: h, body: "{}" }), ctx)],
+];
+
+describe("every admin data endpoint refuses unauthenticated callers (before touching the database)", () => {
+  it.each(reads)("%s → 401", async (_n, call) => {
+    const res = await call();
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHENTICATED");
+  });
+  it.each(writes)("%s → 401 without a session", async (_n, call) => {
+    expect((await call(same)).status).toBe(401);
+  });
+});
+
+describe("state-changing admin endpoints refuse cross-origin requests even with a cookie", () => {
+  it.each(writes)("%s → 403", async (_n, call) => {
+    expect((await call(evil)).status).toBe(403);
+  });
+});
