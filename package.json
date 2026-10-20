@@ -14,7 +14,9 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "db:init": "tsx --env-file=.env.local scripts/init-indexes.ts",
-    "admin:create": "tsx --env-file=.env.local scripts/create-admin.ts"
+    "admin:create": "tsx --env-file=.env.local scripts/create-admin.ts",
+    "test:e2e": "tsx scripts/e2e.ts",
+    "test:all": "vitest run && tsx scripts/e2e.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.2",
@@ -37,6 +39,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",

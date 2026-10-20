@@ -121,3 +121,17 @@ describe("checkRateLimit", () => {
     expect(res.filter((r) => r.allowed)).toHaveLength(5);
   });
 });
+
+describe("configurable form options", () => {
+  it("saveFormOptions changes what the public form accepts, immediately", async () => {
+    const { saveFormOptions, getFormOptions } = await import("@/lib/settings-service");
+    const { buildComplaintInputSchema } = await import("@/lib/validation");
+    await saveFormOptions(db, { adminId: "a1", input: { departments: ["Legal", "IT"], categories: ["Other"] }, correlationId: "c-12345" });
+    const options = await getFormOptions(db);
+    expect(options).toEqual({ departments: ["Legal", "IT"], categories: ["Other"] });
+    const schema = buildComplaintInputSchema(options);
+    const base = { userName: "A B", problemCategory: "Other", problemDescription: "Something is broken here" };
+    expect(schema.safeParse({ ...base, department: "Legal" }).success).toBe(true);
+    expect(schema.safeParse({ ...base, department: "Sales" }).success).toBe(false); // no longer offered
+  });
+});

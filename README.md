@@ -1,68 +1,102 @@
-# IT Helpdesk & Complaint Management: Phases 1–6
+# IT Helpdesk & Complaint Management
 
-Status of this drop: **Phase 1 (design system), Phase 2 (MongoDB layer + complaint API) and Phase 3 (public form + success page), Phase 4 (admin authentication), Phase 5 (dashboard, complaints table, edit and resolve) and Phase 6 (n8n + Google Sheets sync)**.
-Not built yet: sheet-vs-database reconciliation (rest of Phase 7), the departments/categories editor in Settings, and the end-to-end browser test (Phase 8). Spreadsheet sync is **awaiting configuration** until you follow
-[`n8n/README.md`](n8n/README.md): complaints are stored in MongoDB with a queued sync job, and nothing claims they reached Google Sheets.
+Employees report IT problems through a public form (no login). The IT administrator tracks, updates and resolves
+them in a secure dashboard. MongoDB Atlas is the source of truth; n8n Cloud mirrors every complaint into a Google
+Sheet, so the old Excel workflow keeps working without anyone typing into it.
 
-## Run it on Windows (PowerShell)
+**Stack:** Next.js (App Router) + TypeScript, Tailwind CSS + shadcn-style components, MongoDB Atlas, n8n Cloud, Google Sheets, Recharts, Zod + React Hook Form, Lucide icons.
 
-1. Install Node.js 22 LTS from nodejs.org. Check: `node -v`.
-2. In the project folder: `npm install`
-3. Create a MongoDB Atlas cluster (free M0 is fine), a database user, and add your IP under Network Access.
-   Use Atlas rather than a bare local `mongod`: the outbox uses **transactions**, which need a replica set.
-4. `Copy-Item .env.example .env.local`, then set `MONGODB_URI` and a random `AUTH_SECRET`:
-   `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
-5. `npm run db:init` creates collections, `$jsonSchema` validators and all indexes. **Required once per environment**; the unique indexes are what guarantee unique complaint IDs.
-6. `npm run dev`, then open http://localhost:3000/complaint (the public form) or http://localhost:3000/design-system (dev-only style reference).
+## How it fits together
 
-7. Create the first administrator (no default account exists; there is no public sign-up):
-   `npm run admin:create` (prompts for email, name and a hidden password; min 12 characters).
-   Then sign in at http://localhost:3000/admin/login.
-   Lost access? `npm run admin:create -- --email you@company.com --reset-password` (also signs out every session).
+```
+Employee ──► /complaint ──► POST /api/complaints
+                              1. validate, rate-limit, sanitise
+                              2. ONE transaction: complaint + audit entry + sync job   ◄── MongoDB = truth
+                              3. respond (the employee never waits for the spreadsheet)
+                              4. in the background: send the job to n8n
+                                       │
+                 n8n workflow A/B ◄────┘  finds the row by exact Complaint ID, appends or updates it,
+                      │                   and replies; the app counts it as done ONLY on a confirmed reply
+                      ▼
+                Google Sheet "IT Complaints"
+Admin ──► /admin (session cookie) ──► edit / resolve ──► same transaction pattern ──► n8n workflow B
+n8n workflow C (every 15 min) ──► POST /api/internal/sync/run ──► retries anything that failed or was missed
+Admin ──► Sheet check ──► compares every complaint with every sheet row; repairs missing rows and wrong statuses
+```
 
-## Admin workflow (Phase 5)
-- **Dashboard** (`/admin/dashboard`): Today / Last 7 days / Last 30 days / custom range (by date received, Karachi time). Five summary cards and five charts, all computed by one MongoDB aggregation, not in the browser. Average resolution time uses resolved complaints only.
-- **Complaints** (`/admin/complaints`): server-side search (ID or name), filters (status, priority, department, category, received dates), sorting (received, priority, status) and pagination. Every filter lives in the URL, so views can be bookmarked. Default view lists Pending first, newest first. Pending rows are highlighted.
-- **Complaint page** (`/admin/complaints/IT-…`): full details, edit form, resolution, spreadsheet-sync status with a Retry button, and the complete history (who changed what, when).
-- **Resolve**: a confirmation dialog, then ONE atomic MongoDB operation that checks the complaint is still Pending and records the time, the duration and the administrator together. A second click, a second admin, or a repeated request gets a clear "already resolved" and cannot change the original resolution time.
-- **Edit**: priority, department, category, work stuck reason and resolution notes only. The ID, employee, description, received time and status can't be changed. Edits use optimistic concurrency: if someone else changed the complaint first, you are asked to reload rather than silently overwriting them.
-- Every edit and resolution is saved together with its audit entry and its spreadsheet-sync job in a single transaction.
-- Admin API (all require a signed-in session; unsafe methods also require a same-origin request): `GET /api/admin/complaints`, `GET|PATCH /api/admin/complaints/[id]`, `POST …/[id]/resolve`, `POST …/[id]/sync`, `GET /api/admin/dashboard`, `GET /api/admin/audit-logs`. URLs use the human complaint ID, never the database ID.
+Key guarantees: a stored complaint is never lost when n8n or Google is down; a complaint can be resolved exactly once;
+only the matching sheet row is ever updated (never the last row, never "all Pending"); the app never reports a sheet
+sync as done until n8n confirms it.
 
-## Spreadsheet sync (Phase 6)
-Follow **[`n8n/README.md`](n8n/README.md)** to prepare the sheet, create the Google service account, import the three workflows
-(`n8n/*.json`) and set `N8N_NEW_COMPLAINT_WEBHOOK_URL`, `N8N_UPDATE_COMPLAINT_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET`, `SYNC_RUNNER_SECRET`.
-- After a complaint is stored, the app tries the sync once in the background (employees never wait). Failures retry with bounded exponential backoff (30 s → 1 h, 8 attempts).
-- A sync is recorded as done **only** when n8n replies that the Google Sheets node succeeded and echoes the same event ID.
-- The dashboard shows how many complaints are waiting or need attention.
-- Workflow C (every 15 min) calls `POST /api/internal/sync/run`, protected by `SYNC_RUNNER_SECRET`. With no secret set, that endpoint is disabled.
+## What is built
 
-## Admin security model (Phase 4)
-- **Passwords:** Argon2id (19 MiB, 2 passes). Policy: 12 to 128 characters, no common passwords, no email name inside.
-- **Sessions:** random 256-bit token in an HttpOnly, SameSite=Lax cookie (`__Host-` prefixed and Secure in production). Only a SHA-256 hash is stored in MongoDB, so logout is real revocation. Sessions end after 12 hours, or 1 hour idle.
-- **Authorization is server-side on every call:** `requireAdminPage()` in each admin page and `requireAdminApi()` in each admin API route validate the session against the database. `src/proxy.ts` is only a cheap first gate (no cookie → login / 401).
-- **CSRF:** SameSite=Lax + Origin must match the host on unsafe methods + JSON-only bodies.
-- **Login hardening:** per-IP (10) and per-account (8) attempts per 15 minutes; identical error for unknown email, wrong password and disabled account; a dummy hash is verified for unknown emails so timing doesn't reveal them.
-- **Local note:** a production build (`npm start`) on plain `http://localhost` sets a Secure cookie, which Chrome, Edge and Firefox accept on localhost but Safari does not. `npm run dev` is unaffected.
+| Phase | Delivered |
+|---|---|
+| 1 Foundation | Forest/emerald design system, admin shell, accessible components |
+| 2 Data and API | MongoDB schemas, validators and unique indexes, complaint creation API, rate limiting, readable unique IDs |
+| 3 Public form | Validated form with counters and priority guidance, duplicate-submit protection, confirmation page |
+| 4 Admin security | Argon2id passwords, revocable server-side sessions, CSRF defence, login rate limits, server-side authorization on every page and API |
+| 5 Admin workflow | Dashboard with 5 charts and date filters, searchable/sortable/paginated table, details and edit page with optimistic concurrency, atomic resolve, history |
+| 6 n8n and Sheets | Three importable workflows, webhook auth, idempotent row writes, formula-injection protection |
+| 7 Reliability | Transactional outbox, bounded exponential retries, retry button, audit log, read-only sheet reconciliation with safe repairs |
+| 8 Quality and docs | Unit, integration and browser tests; deployment, troubleshooting, verification and API documents; Settings editor for departments and categories |
 
-## Try the API
+## Quick start (Windows PowerShell)
 
 ```powershell
-curl.exe -X POST http://localhost:3000/api/complaints -H "Content-Type: application/json" `
-  -d '{\"userName\":\"Ayesha Khan\",\"department\":\"Sales\",\"problemCategory\":\"Email / Outlook\",\"problemDescription\":\"Outlook keeps asking for my password.\"}'
+npm install
+Copy-Item .env.example .env.local      # then fill it in: see docs/DEPLOYMENT.md
+npm run db:init                         # once per database
+npm run admin:create                    # first administrator (hidden password prompt)
+npm run dev                             # http://localhost:3000/complaint  and  /admin/login
 ```
-Success returns `201` with `complaintId`, `receivedAt`, `status: "Pending"`, `spreadsheetSync: "pending"`.
-Errors use `{ ok:false, error:{ code, message, fieldErrors?, correlationId } }`.
 
-## Tests
-- `npm run test:unit`: validation, IDs, time/duration (no database needed)
-- `npm run test:integration`: needs internet once (downloads a MongoDB binary) and uses an in-memory replica set; includes the login → logout lifecycle, session expiry and rate-limit tests
-- `npm run typecheck`, `npm run build`
+You must set up three external things yourself; until you do, the app shows "Awaiting configuration" for them:
+**MongoDB Atlas**, the **Google service account and sheet**, and **n8n**. Exact steps: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`n8n/README.md`](n8n/README.md).
 
-## Design decisions in this drop
-- Duration field is `solveDurationMinutes`: nearest minute, halves up (documented in `src/lib/time.ts`).
-- Complaint ID: `IT-YYYYMMDD-XXXX` (Karachi date + 4 random chars, no 0/O/1/I/L). Uniqueness comes from the unique index plus retry on duplicate key.
-- Rate limiting is MongoDB-backed (works on serverless); IPs are stored only as keyed hashes.
-- Free text is stored as plain text with control characters stripped and **escaped on render**, not HTML-stripped (stripping would corrupt text like "press <Enter>").
-- CAPTCHA hook: `src/lib/abuse.ts`, already awaited by the API.
-"# it-helpdesk" 
+## Documents
+
+| Read this | For |
+|---|---|
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Windows setup, Atlas, Google, environment variables, Vercel deployment, monitoring |
+| [`n8n/README.md`](n8n/README.md) | Sheet layout, service account, importing the three workflows, every node explained, test URLs vs production URLs |
+| [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | Tick-box checklist proving the whole lifecycle on the real stack |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Symptom, cause, fix |
+| [`docs/API.md`](docs/API.md) | Every endpoint, request, response and status code |
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `npm run dev` / `build` / `start` | Run, build, serve |
+| `npm run typecheck` | TypeScript check |
+| `npm run test:unit` | Fast tests, nothing external needed |
+| `npm run test:integration` | Real MongoDB behaviour (downloads a test binary once) |
+| `npm run test:e2e` | Whole lifecycle in a browser (`npx playwright install chromium` first) |
+| `npm run db:init` | Collections, validators, indexes (idempotent) |
+| `npm run admin:create` | Create an administrator, or `-- --reset-password` |
+
+## Design decisions worth knowing
+
+- **Times:** stored in UTC; shown in Asia/Karachi; the server's clock decides every timestamp, never the browser's.
+- **Complaint ID:** `IT-YYYYMMDD-XXXX` (4 random characters without 0/O/1/I/L). Uniqueness comes from a unique index with retry, not from the format.
+- **Duration:** `solveDurationMinutes` = `solvedAt − receivedAt`, nearest minute (halves up), computed inside the same database operation that resolves the complaint. Dashboard averages use resolved complaints only.
+- **Free text** is stored as plain text and escaped when displayed (never stripped, so "press <Enter>" survives). In the sheet, text starting with `=`, `+`, `-` or `@` gets a leading apostrophe so it can never run as a formula.
+- **Privacy:** logs contain IDs and correlation IDs, never names, descriptions, contact numbers, passwords or tokens. Contact numbers are never sent to the sheet.
+- **No CAPTCHA by default**; `src/lib/abuse.ts` is the one place to add it if spam appears.
+- **Sessions:** server-side and revocable (not a signed cookie that can't be cancelled); 12 hours maximum, 1 hour idle.
+
+## Project structure
+
+```
+src/app/            pages (public /complaint, admin /admin/*) and API routes (/api/*)
+src/components/     ui/ (base components), forms/, complaints/, dashboard/, layout/
+src/lib/            business logic: complaint-service, complaint-admin-service, dashboard-service,
+                    sync-service, reconcile, auth, permissions, n8n, google-sheets, validation, time, range
+src/models/         MongoDB document types, validators, indexes
+src/proxy.ts        first-layer gate for /admin and /api/admin (real checks are server-side)
+n8n/                the three importable workflows + their documentation
+scripts/            db:init, admin:create, e2e runner
+tests/              unit/, integration/, e2e/, support/ (the fake n8n used by contract and e2e tests)
+docs/               deployment, troubleshooting, verification, API
+```

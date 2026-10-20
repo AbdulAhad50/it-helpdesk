@@ -110,3 +110,28 @@ export function parseListQuery(
     },
   };
 }
+
+// ── Public form options (departments and problem categories) ────────────────
+
+import { cleanSingleLine } from "@/lib/validation";
+
+export const OPTION_MAX_ITEMS = 50;
+export const OPTION_MAX_LENGTH = 100;
+
+const optionList = (singular: string) =>
+  z
+    .array(z.string({ error: `Each ${singular} must be text.` }), { error: `Provide a list of ${singular}s.` })
+    .transform((list) => list.map(cleanSingleLine).filter((v) => v.length > 0))
+    .pipe(
+      z
+        .array(z.string().max(OPTION_MAX_LENGTH, `Each ${singular} must be ${OPTION_MAX_LENGTH} characters or fewer.`))
+        .min(1, `Keep at least one ${singular}.`)
+        .max(OPTION_MAX_ITEMS, `Use ${OPTION_MAX_ITEMS} ${singular}s or fewer.`),
+    )
+    .refine((list) => new Set(list.map((v) => v.toLowerCase())).size === list.length, `Each ${singular} must be different (ignoring capital letters).`);
+
+export const formOptionsSchema = z.object({
+  departments: optionList("department"),
+  categories: optionList("category"),
+});
+export type FormOptionsInput = z.output<typeof formOptionsSchema>;

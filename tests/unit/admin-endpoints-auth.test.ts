@@ -7,6 +7,8 @@ import { POST as resolvePost } from "@/app/api/admin/complaints/[id]/resolve/rou
 import { POST as syncPost } from "@/app/api/admin/complaints/[id]/sync/route";
 import { GET as dashboardGet } from "@/app/api/admin/dashboard/route";
 import { GET as auditGet } from "@/app/api/admin/audit-logs/route";
+import { GET as reconGet, POST as reconPost } from "@/app/api/admin/reconciliation/route";
+import { GET as optionsGet, PUT as optionsPut } from "@/app/api/admin/settings/form-options/route";
 
 const ID = "IT-20261018-A7K2";
 const ctx = { params: Promise.resolve({ id: ID }) };
@@ -19,10 +21,14 @@ const reads: [string, () => Promise<Response>][] = [
   ["GET /complaints/[id]", () => oneGet(new NextRequest(url(`/api/admin/complaints/${ID}`)), ctx)],
   ["GET /dashboard", () => dashboardGet(new NextRequest(url("/api/admin/dashboard")))],
   ["GET /audit-logs", () => auditGet(new NextRequest(url("/api/admin/audit-logs")))],
+  ["GET /settings/form-options", () => optionsGet(new NextRequest(url("/api/admin/settings/form-options")))],
+  ["GET /reconciliation", () => reconGet(new NextRequest(url("/api/admin/reconciliation")))],
 ];
 const writes: [string, (headers: Record<string, string>) => Promise<Response>][] = [
   ["PATCH /complaints/[id]", (h) => onePatch(new NextRequest(url(`/api/admin/complaints/${ID}`), { method: "PATCH", headers: h, body: JSON.stringify({ version: 1, priority: "Low" }) }), ctx)],
   ["POST /complaints/[id]/resolve", (h) => resolvePost(new NextRequest(url(`/api/admin/complaints/${ID}/resolve`), { method: "POST", headers: h, body: "{}" }), ctx)],
+  ["PUT /settings/form-options", (h) => optionsPut(new NextRequest(url("/api/admin/settings/form-options"), { method: "PUT", headers: h, body: JSON.stringify({ departments: ["IT"], categories: ["Other"] }) }))],
+  ["POST /reconciliation", (h) => reconPost(new NextRequest(url("/api/admin/reconciliation"), { method: "POST", headers: h, body: "{}" }))],
   ["POST /complaints/[id]/sync", (h) => syncPost(new NextRequest(url(`/api/admin/complaints/${ID}/sync`), { method: "POST", headers: h, body: "{}" }), ctx)],
 ];
 

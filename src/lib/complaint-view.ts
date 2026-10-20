@@ -94,6 +94,7 @@ const ACTION_LABELS: Record<string, string> = {
   "complaint.updated": "Details updated",
   "complaint.resolved": "Marked resolved",
   "sync.retried": "Spreadsheet sync retried",
+  "sync.reconciled": "Spreadsheet repair queued",
 };
 
 const FIELD_LABELS: Record<string, string> = {

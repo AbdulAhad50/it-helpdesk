@@ -7,9 +7,9 @@ const optionalSecret = z.preprocess(emptyToUndefined, z.string().trim().min(32, 
 
 const envSchema = z.object({
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
+  MONGODB_URI: z.string().min(1, "mongodb+srv://techahad45:Makhan50@cluster0.d0oyv.mongodb.net/").default("mongodb+srv://techahad45:Makhan50@cluster0.d0oyv.mongodb.net/"),
   MONGODB_DB_NAME: z.string().min(1).default("it_helpdesk"),
-  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
+  AUTH_SECRET: z.string().min(32, "17846723hfsdjhafgsdjhg7367462387gfjjksdjfksdasdhsjhfhasjhg").default("17846723hfsdjhafgsdjhg7367462387gfjjksdjfksdasdhsjhfhasjhg"),
 
   N8N_NEW_COMPLAINT_WEBHOOK_URL: optionalUrl,
   N8N_UPDATE_COMPLAINT_WEBHOOK_URL: optionalUrl,

@@ -7,7 +7,7 @@ when the helpdesk app asks it to. This folder holds three importable workflows:
 |---|---|---|
 | `new-complaint-sync.json` | **A** | Append one row for a new complaint (idempotent) |
 | `resolve-complaint-sync.json` | **B** | Update exactly one existing row (edits and resolutions) |
-| `reconciliation.json` | **C** | Every 15 minutes, ask the app to retry failed or missed syncs |
+| `reconciliation.json` | **C** | Every 15 minutes, ask the app to retry failed or missed syncs. (Comparing the sheet with the database is the app's **Sheet check** page, which reads the sheet itself and needs no n8n workflow.) |
 
 > **Honest status:** these files were generated and checked by automated tests (structure, expressions, and the
 > Code-node logic run against realistic payloads), but they have **not been run against a live n8n Cloud instance
@@ -136,7 +136,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/internal/sync/run 
 |---|---|---|---|---|---|
 | 1 | **Webhook** | Webhook v2 | POST `/helpdesk/complaint-created`; auth *Header Auth*; respond via *Respond to Webhook* node | Config | wrong/missing secret: n8n answers 403 itself |
 | 2 | **Config** | Set v3.4 | `spreadsheetId`, `sheetName`; keeps the incoming fields | Validate Payload | |
-| 3 | **Validate Payload** | Code v2 | Rejects unless: `schemaVersion = 1`; `eventType = complaint.created`; ID matches `IT-########-XXXX`; `eventId = complaint.created:<id>`; all 16 columns present as text (≤ 4000 chars); `row["Complaint ID"]` equals `complaintId`. Outputs `valid` and `reason`. | Valid? | |
+| 3 | **Validate Payload** | Code v2 | Rejects unless: `schemaVersion = 1`; `eventType = complaint.created`; ID matches `IT-########-XXXX`; `eventId` starts with `complaint.created:<id>` (repairs from Sheet check add a `:reconcile:…` suffix); all 16 columns present as text (≤ 4000 chars); `row["Complaint ID"]` equals `complaintId`. Outputs `valid` and `reason`. | Valid? | |
 | 4 | **Valid?** | IF v2.2 | `{{ $json.valid }}` is true | true → Find Rows | false → Respond Invalid Payload |
 | 5 | **Find Rows by Complaint ID** | Google Sheets v4.5 | Read; filter column `Complaint ID` = `{{ $json.complaintId }}`; *Always Output Data* on; service-account auth | Evaluate Matches | **error output** → Respond Sheets Error |
 | 6 | **Evaluate Matches** | Code v2 | Counts rows whose `Complaint ID` equals the ID exactly (trimmed): 0 → `append`, 1 → `exists`, >1 → `duplicate` | Needs Append? | |
@@ -179,7 +179,7 @@ Re-delivering the same event rewrites identical values, so retries are safe.
 | 4 | **Needs Attention?** | IF v2.2 | `{{ $json.data.queue.needsAttention }}` > 0 | true → Raise Alert | false → end |
 | 5 | **Raise Alert** | Stop and Error v1 | Fails the run on purpose with a message | | n8n's failure notifications fire |
 
-Workflow C currently **retries**. Comparing every MongoDB complaint with every sheet row (reconciliation) is added in Phase 7.
+Workflow C **retries**. Comparing every MongoDB complaint with every sheet row is the admin **Sheet check** page (read-only, by exact Complaint ID); its repairs flow through workflows A and B like any other event.
 
 ## 7. Verify it end to end
 

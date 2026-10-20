@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { BarChart3, ClipboardList, Menu, Settings, ShieldCheck, X } from "lucide-react";
+import { BarChart3, ClipboardList, GitCompareArrows, Menu, Settings, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const NAV = [
   { href: "/admin/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/admin/complaints", label: "Complaints", icon: ClipboardList },
+  { href: "/admin/reconciliation", label: "Sheet check", icon: GitCompareArrows },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ] as const;
 

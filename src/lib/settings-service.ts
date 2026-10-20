@@ -16,3 +16,26 @@ export async function getFormOptions(db?: Db): Promise<FormOptions> {
     categories: doc?.categories?.length ? doc.categories : [...DEFAULT_CATEGORIES],
   };
 }
+
+import { log } from "@/lib/logger";
+import type { FormOptionsInput } from "@/lib/validation-admin";
+
+/**
+ * Replace the public form's departments and categories. Existing complaints keep whatever value they
+ * were submitted with, and the admin edit form still tolerates a value that has since been removed.
+ */
+export async function saveFormOptions(db: Db, args: { adminId: string; input: FormOptionsInput; correlationId: string }) {
+  const now = new Date();
+  await settingsCollection(db).updateOne(
+    { _id: "form-options" },
+    { $set: { departments: args.input.departments, categories: args.input.categories, updatedAt: now, updatedBy: args.adminId } },
+    { upsert: true },
+  );
+  log("info", "settings.form_options_saved", {
+    adminId: args.adminId,
+    correlationId: args.correlationId,
+    departments: args.input.departments.length,
+    categories: args.input.categories.length,
+  });
+  return { departments: args.input.departments, categories: args.input.categories, updatedAt: now };
+}
