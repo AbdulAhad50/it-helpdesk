@@ -69,7 +69,7 @@ export function ComplaintForm({ options }: { options: FormOptions }) {
     setBanner(null);
 
     const result = await submitComplaint(values);
-    const result_n8n = await fetch('https://mtj.app.n8n.cloud/webhook-test/mtj-it-complaint', {
+    const result_n8n = await fetch('https://mtj.app.n8n.cloud/webhook/mtj-it-complaint', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
