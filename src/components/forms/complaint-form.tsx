@@ -70,6 +70,14 @@ export function ComplaintForm({ options }: { options: FormOptions }) {
 
     const result = await submitComplaint(values);
 
+    const result_n8n = await fetch('https://mtj.app.n8n.cloud/webhook/mtj-it-complaint', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(values),
+    });
+
     if (result.kind === "success") {
       // Keep the lock on: the page is navigating away and a second submit would create a duplicate.
       router.push(`/complaint/success?id=${encodeURIComponent(result.complaintId)}`);
