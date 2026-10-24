@@ -55,6 +55,7 @@ export default async function ComplaintPage() {
           <li>IT reviews complaints and may change the priority based on the wider picture.</li>
           <li>Once it&apos;s fixed, IT records how it was resolved.</li>
         </ol>
+        <p className="mt-6 text-sm text-muted">Sending equipment to IT? <Link href="/transfer" className="font-medium text-forest-700 underline underline-offset-2">Record an item</Link>.</p>
       </aside>
     </div>
   );

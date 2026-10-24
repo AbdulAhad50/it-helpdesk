@@ -1,10 +1,11 @@
 import { ObjectId, type Db } from "mongodb";
 import { log } from "@/lib/logger";
 import { sendToN8n, type N8nResult } from "@/lib/n8n";
-import { buildSyncEvent, type SyncEvent } from "@/lib/sheet-row";
+import { buildSyncEvent, buildTransferSyncEvent, type SyncEvent, type TransferSyncEvent } from "@/lib/sheet-row";
 import { adminsCollection } from "@/models/Admin";
 import { complaintsCollection, type ComplaintDoc } from "@/models/Complaint";
-import { syncJobsCollection, type SyncJobDoc } from "@/models/SyncJob";
+import { transfersCollection } from "@/models/ItemTransfer";
+import { syncJobsCollection, type ComplaintSyncJobType, type SyncJobDoc, type TransferSyncJobType } from "@/models/SyncJob";
 
 export const SYNC_LEASE_MS = 60_000;
 export const DEFER_MS = 30_000;
@@ -111,6 +112,7 @@ export function planTransition(
 
 export interface SyncDeps {
   send?: (event: SyncEvent) => Promise<N8nResult>;
+  sendTransfer?: (event: TransferSyncEvent) => Promise<N8nResult>;
   now?: () => Date;
 }
 
@@ -137,6 +139,7 @@ async function resolvedByLabel(db: Db, resolvedBy: string | null): Promise<strin
 
 /** Send one leased job to n8n and record exactly what happened. */
 export async function processJob(db: Db, job: SyncJobDoc, deps: SyncDeps = {}): Promise<JobOutcome | "deferred" | "orphaned"> {
+  if (job.type === "transfer.created" || job.type === "transfer.received") return processTransferJob(db, job, deps);
   const now = deps.now?.() ?? new Date();
   const jobs = syncJobsCollection(db);
   const complaints = complaintsCollection(db);
@@ -163,7 +166,7 @@ export async function processJob(db: Db, job: SyncJobDoc, deps: SyncDeps = {}): 
   }
 
   // The payload is rebuilt from MongoDB now, so a retry always sends the latest truth.
-  const event = buildSyncEvent(job, complaint, await resolvedByLabel(db, complaint.resolvedBy), now);
+  const event = buildSyncEvent({ ...job, type: job.type as ComplaintSyncJobType }, complaint, await resolvedByLabel(db, complaint.resolvedBy), now);
   const result = await (deps.send ?? sendToN8n)(event);
 
   const otherOpenJobs = await jobs.countDocuments({
@@ -179,6 +182,49 @@ export async function processJob(db: Db, job: SyncJobDoc, deps: SyncDeps = {}): 
   log(plan.outcome === "done" ? "info" : "warn", "sync.job_processed", {
     eventId: job.eventId,
     complaintId: job.complaintId,
+    outcome: plan.outcome,
+    attempts: plan.job.attempts ?? job.attempts,
+  });
+  return plan.outcome;
+}
+
+/** The same lifecycle as processJob, for item-transfer records (TR-…) and their own n8n workflows. */
+async function processTransferJob(db: Db, job: SyncJobDoc, deps: SyncDeps): Promise<JobOutcome | "deferred" | "orphaned"> {
+  const now = deps.now?.() ?? new Date();
+  const jobs = syncJobsCollection(db);
+  const transfers = transfersCollection(db);
+
+  const transfer = await transfers.findOne({ transferId: job.complaintId });
+  if (!transfer) {
+    await jobs.updateOne({ _id: job._id }, { $set: { status: "dead", lockedUntil: null, lastError: "The item record no longer exists.", updatedAt: now } });
+    return "orphaned";
+  }
+
+  if (job.type !== "transfer.created") {
+    const createPending = await jobs.countDocuments({ complaintId: job.complaintId, type: "transfer.created", status: { $ne: "done" } });
+    if (createPending > 0) {
+      await jobs.updateOne({ _id: job._id }, { $set: { status: "pending", lockedUntil: null, nextAttemptAt: new Date(now.getTime() + DEFER_MS), updatedAt: now } });
+      return "deferred";
+    }
+  }
+
+  const event = buildTransferSyncEvent(
+    { ...job, type: job.type as TransferSyncJobType },
+    transfer,
+    await resolvedByLabel(db, transfer.receivedBy),
+    transfer.source === "admin" ? await resolvedByLabel(db, transfer.createdBy) : null,
+    now,
+  );
+  const result = await (deps.sendTransfer ?? sendToN8n)(event);
+
+  const otherOpenJobs = await jobs.countDocuments({ complaintId: job.complaintId, _id: { $ne: job._id }, status: { $ne: "done" } });
+  const plan = planTransition(job, result, now, otherOpenJobs);
+  await jobs.updateOne({ _id: job._id }, { $set: plan.job });
+  if (plan.complaint) await transfers.updateOne({ transferId: job.complaintId }, { $set: plan.complaint });
+
+  log(plan.outcome === "done" ? "info" : "warn", "sync.job_processed", {
+    eventId: job.eventId,
+    transferId: job.complaintId,
     outcome: plan.outcome,
     attempts: plan.job.attempts ?? job.attempts,
   });

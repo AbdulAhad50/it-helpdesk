@@ -57,4 +57,21 @@ integrations are really connected. Tick each box; stop and fix at the first fail
 - [ ] Complaint text starting with `=` (e.g. `=1+1`) appears in the sheet as text with a leading apostrophe, not as a calculated cell
 - [ ] The Vercel logs contain `complaint.created` lines with IDs but no names, descriptions or contact numbers
 
+## H. Item transfers ("received and out")
+Prerequisites: the *Item Transfers* tab exists with its 16 headers, workflows D and E are Active, the two transfer webhook URLs are set, `npm run db:init` has been re-run, and Settings → Outlets lists your real outlets.
+- [ ] `/` (signed out) offers two choices; **Send an item to IT** opens `/transfer`
+- [ ] The outlet dropdown shows your configured outlets. Submitting an empty form shows a message under each field and sends nothing
+- [ ] Submit one item (name, email, contact, outlet, description). The confirmation shows an ID like `TR-20261018-B3M9` and the recorded time in Karachi time
+- [ ] Atlas: an `itemtransfers` document with `direction: "to_it"`, `source: "public"`, `status: "In transit"`, `receivedAt: null`, `version: 1`, `createdAt` set by the server
+- [ ] Within seconds the *Item Transfers* tab has **exactly one** new row: Direction `To IT`, Status `In transit`, Date and Time filled, the four receipt cells blank, Logged By `Outlet (public form)`
+- [ ] Submit a second item. The tab has exactly two rows
+- [ ] Signed in, `/admin/transfers` lists both with In-transit rows highlighted; the dashboard shows "2 items on the way to IT"
+- [ ] Click **Accept** on the first item only. The dialog shows its ID and summary. Add a note, confirm
+- [ ] Atlas: that record is `Received` with `receivedAt`, `receivedBy` = you, your note and `version: 2`. **The other record is untouched**
+- [ ] Sheet: only that row changed (Status `Received`, Received Date/Time, Received By = your name, Receipt Notes, Last Updated). The other row is byte-for-byte unchanged and no row was added
+- [ ] Click **Accept** on the same item again (or from a second browser): "Already confirmed", and `receivedAt` is unchanged
+- [ ] **Record an item** (admin form): choose From IT, a recipient and an outlet. A new row appears with Direction `From IT` and Logged By = your name. **Confirm** marks it delivered and updates only its row
+- [ ] Deactivate workflow D, submit an item: it is saved, the dashboard shows it waiting to sync, and it syncs after D is reactivated (workflow C or the runner call)
+- [ ] The complaints tab is unaffected by all of the above
+
 Sign-off: ______________________  Date: ______________  Environment: ☐ test sheet  ☐ production

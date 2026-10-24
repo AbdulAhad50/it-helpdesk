@@ -44,9 +44,35 @@ const syncJobValidator = {
     required: ["eventId", "type", "complaintId", "status", "attempts", "maxAttempts", "nextAttemptAt", "createdAt", "updatedAt"],
     properties: {
       eventId: { bsonType: "string" },
-      type: { enum: ["complaint.created", "complaint.updated", "complaint.resolved"] },
+      type: { enum: ["complaint.created", "complaint.updated", "complaint.resolved", "transfer.created", "transfer.received"] },
       status: { enum: ["pending", "processing", "done", "failed", "dead"] },
       attempts: { bsonType: ["int", "long"], minimum: 0 },
+    },
+  },
+};
+
+const transferValidator = {
+  $jsonSchema: {
+    bsonType: "object",
+    required: ["transferId", "direction", "source", "name", "outlet", "description", "status", "createdAt", "updatedAt", "createdBy", "version", "history", "syncState"],
+    properties: {
+      transferId: { bsonType: "string", pattern: "^TR-[0-9]{8}-[A-HJKMNP-Z2-9]{4}$" },
+      direction: { enum: ["to_it", "from_it"] },
+      source: { enum: ["public", "admin"] },
+      name: { bsonType: "string", minLength: 2, maxLength: 100 },
+      email: { bsonType: ["string", "null"], maxLength: 254 },
+      contact: { bsonType: ["string", "null"], maxLength: 30 },
+      outlet: { bsonType: "string", minLength: 1, maxLength: 100 },
+      description: { bsonType: "string", minLength: 1, maxLength: 2000 },
+      status: { enum: ["In transit", "Received"] },
+      createdAt: { bsonType: "date" },
+      updatedAt: { bsonType: "date" },
+      receivedAt: { bsonType: ["date", "null"] },
+      receivedBy: { bsonType: ["string", "null"] },
+      receiptNotes: { bsonType: ["string", "null"], maxLength: 1000 },
+      version: { bsonType: ["int", "long"], minimum: 1 },
+      history: { bsonType: "array" },
+      syncState: { enum: ["pending", "synced", "failed", "needs_reconciliation"] },
     },
   },
 };
@@ -68,6 +94,7 @@ async function ensureCollection(db: Db, name: string, validator?: object) {
 export async function ensureIndexes(db: Db): Promise<void> {
   await ensureCollection(db, "complaints", complaintValidator);
   await ensureCollection(db, "syncjobs", syncJobValidator);
+  await ensureCollection(db, "itemtransfers", transferValidator);
   for (const name of ["admins", "adminsessions", "auditlogs", "ratelimits", "settings"]) await ensureCollection(db, name);
 
   const complaints = db.collection("complaints");
@@ -82,6 +109,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { userName: 1 },
     { name: "userName_ci", collation: { locale: "en", strength: 2 } },
   );
+
+  const transfers = db.collection("itemtransfers");
+  await transfers.createIndex({ transferId: 1 }, { unique: true, name: "uniq_transferId" });
+  await transfers.createIndex({ status: 1, createdAt: -1 }, { name: "transfer_status_created" });
+  await transfers.createIndex({ direction: 1, status: 1, createdAt: -1 }, { name: "transfer_direction_status" });
+  await transfers.createIndex({ outlet: 1, createdAt: -1 }, { name: "transfer_outlet_created" });
 
   const jobs = db.collection("syncjobs");
   await jobs.createIndex({ eventId: 1 }, { unique: true, name: "uniq_eventId" });

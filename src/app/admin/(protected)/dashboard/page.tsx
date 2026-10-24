@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { AlertTriangle, CheckCircle2, CircleDashed, Database } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, CircleDashed, Database, PackageCheck } from "lucide-react";
 import { AdminPage } from "@/components/layout/admin-page";
 import { DashboardCharts } from "@/components/dashboard/charts";
 import { RangeFilter } from "@/components/dashboard/range-filter";
@@ -11,6 +12,7 @@ import { getDb } from "@/lib/mongodb";
 import { requireAdminPage } from "@/lib/permissions";
 import { resolveRange } from "@/lib/range";
 import { getQueueSummary } from "@/lib/sync-service";
+import { countInTransit } from "@/lib/transfer-service";
 import { shortDayLabel } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -41,7 +43,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
   const range = resolved.range;
 
   const db = await getDb();
-  const [metrics, queue] = await Promise.all([getDashboardMetrics(db, range), getQueueSummary(db)]);
+  const [metrics, queue, transfers] = await Promise.all([getDashboardMetrics(db, range), getQueueSummary(db), countInTransit(db)]);
   const integrations = getIntegrationStatus();
   const waiting = queue.pending + queue.processing;
 
@@ -53,6 +55,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
             <p>{requested.error} Showing the last 30 days instead.</p>
           </div>
+        )}
+        {transfers.toIt + transfers.fromIt > 0 && (
+          <Link href="/admin/transfers?status=In+transit" className="flex items-center gap-3 rounded-lg border border-pending-line bg-pending-bg p-3.5 text-sm text-pending-fg hover:brightness-95">
+            <PackageCheck className="size-4 shrink-0" aria-hidden />
+            <span>
+              <strong className="font-semibold">{transfers.toIt}</strong> item{transfers.toIt === 1 ? "" : "s"} on the way to IT waiting to be accepted
+              {transfers.fromIt > 0 && <>, <strong className="font-semibold">{transfers.fromIt}</strong> on the way to outlets</>}.
+            </span>
+          </Link>
         )}
         <RangeFilter range={range} />
         <SummaryCards m={metrics} />
@@ -72,7 +83,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
             <CardDescription>What is connected right now (not affected by the date range).</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="grid gap-4 sm:grid-cols-3">
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <li className="flex items-start gap-3">
                 <Database className="mt-0.5 size-4 text-resolved-fg" aria-hidden />
                 <div>
@@ -84,6 +95,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pa
                 ok={integrations.n8n}
                 label="n8n"
                 detail={integrations.n8n ? "Webhook URLs and secret are set." : "Awaiting configuration. Complaints are stored and queued until n8n is connected."}
+              />
+              <Status
+                ok={integrations.n8nTransfers}
+                label="n8n (item transfers)"
+                detail={integrations.n8nTransfers ? "Item transfer webhooks are set." : "Awaiting configuration. Item records are stored and queued until their webhooks are set."}
               />
               <Status
                 ok={integrations.n8n && queue.needsAttention === 0 && waiting === 0}

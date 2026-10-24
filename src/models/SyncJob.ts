@@ -1,6 +1,8 @@
 import type { Db, ObjectId } from "mongodb";
 
-export type SyncJobType = "complaint.created" | "complaint.updated" | "complaint.resolved";
+export type ComplaintSyncJobType = "complaint.created" | "complaint.updated" | "complaint.resolved";
+export type TransferSyncJobType = "transfer.created" | "transfer.received";
+export type SyncJobType = ComplaintSyncJobType | TransferSyncJobType;
 /**
  * pending    waiting for its turn (or for a retry)
  * processing leased by a runner; the lease expires if the runner dies
@@ -20,6 +22,7 @@ export interface SyncJobDoc {
   /** Idempotency key, unique. Sent to n8n so retries cannot duplicate rows. */
   eventId: string;
   type: SyncJobType;
+  /** The ID of the record this job syncs: a complaint ID (IT-…) or, for transfer.* jobs, a transfer ID (TR-…). */
   complaintId: string;
   status: SyncJobStatus;
   attempts: number;

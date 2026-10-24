@@ -60,6 +60,20 @@ Start at the complaint's page: **Spreadsheet sync** shows the state, the last er
 | "Too many submissions" on the public form | 8 per 15 minutes per connection | Wait, or (for a shared office network) raise `SUBMISSION_RATE_LIMIT` in `src/lib/constants.ts` |
 | Spam submissions | Public form has no CAPTCHA by default | Implement `verifyHuman()` in `src/lib/abuse.ts` (e.g. Cloudflare Turnstile) and add the token to the form. The API already calls it |
 
+## Item transfers
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Submitting an item fails and the logs mention `Document failed validation` | The database wasn't updated for item transfers | Run `npm run db:init` once (it adds the collection, indexes and the wider sync-job rules) |
+| "Awaiting configuration" for item transfers; records stay "waiting to sync" | The two transfer webhook URLs (or the shared secret) aren't set | Set `N8N_TRANSFER_CREATED_WEBHOOK_URL` and `N8N_TRANSFER_UPDATED_WEBHOOK_URL`, redeploy. Queued records sync automatically |
+| The outlet dropdown is missing an outlet, or only shows Malir and Other | Outlets are configured in the app | Settings → Form options → Outlets, one per line |
+| An old record shows an outlet no longer in the list | Removing an option doesn't change existing records | Intended |
+| "No sheet row has this Transfer ID" on an Accept sync | Row deleted from the *Item Transfers* tab, or the tab was renamed | Restore the row (the Transfer ID must match exactly), then **Retry sync** on the record. The workflow never inserts a row on an update |
+| "N rows share this Transfer ID" | Duplicate rows in the tab | Delete the extra row(s) by hand, then **Retry sync** |
+| Workflow D/E: webhook 404 or "not registered" | Test URL used, or the workflow is inactive | Use the **Production** URL and activate D and E |
+| An item went in the complaints tab, or a complaint in the transfers tab | The Config node `sheetName` is wrong in a workflow | Complaints → `IT Complaints`; transfers → `Item Transfers` |
+| Accept shows "Already confirmed" | Someone confirmed it first | Expected and safe: the first confirmation is kept |
+
 ## Tests
 
 | Symptom | Fix |

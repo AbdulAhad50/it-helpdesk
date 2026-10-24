@@ -1,5 +1,5 @@
 import { getEnv } from "@/lib/env";
-import type { SyncEvent } from "@/lib/sheet-row";
+import type { SyncEvent, TransferSyncEvent } from "@/lib/sheet-row";
 
 /**
  * What happened when we asked n8n to sync one event. Success is only ever reported when n8n's
@@ -18,6 +18,8 @@ export type N8nResult =
 export interface N8nConfig {
   newComplaintUrl?: string;
   updateComplaintUrl?: string;
+  newTransferUrl?: string;
+  updateTransferUrl?: string;
   secret?: string;
 }
 
@@ -35,6 +37,8 @@ function configFromEnv(): N8nConfig {
   return {
     newComplaintUrl: env.N8N_NEW_COMPLAINT_WEBHOOK_URL,
     updateComplaintUrl: env.N8N_UPDATE_COMPLAINT_WEBHOOK_URL,
+    newTransferUrl: env.N8N_TRANSFER_CREATED_WEBHOOK_URL,
+    updateTransferUrl: env.N8N_TRANSFER_UPDATED_WEBHOOK_URL,
     secret: env.N8N_WEBHOOK_SECRET,
   };
 }
@@ -50,9 +54,19 @@ export function isAllowedWebhookUrl(url: string, nodeEnv = process.env.NODE_ENV)
   }
 }
 
-export async function sendToN8n(event: SyncEvent, deps: N8nDeps = {}): Promise<N8nResult> {
+const webhookUrl = (event: SyncEvent | TransferSyncEvent, cfg: N8nConfig) =>
+  event.eventType === "complaint.created"
+    ? cfg.newComplaintUrl
+    : event.eventType === "transfer.created"
+      ? cfg.newTransferUrl
+      : event.eventType === "transfer.received"
+        ? cfg.updateTransferUrl
+        : cfg.updateComplaintUrl;
+
+export async function sendToN8n(event: SyncEvent | TransferSyncEvent, deps: N8nDeps = {}): Promise<N8nResult> {
   const cfg = deps.config ?? configFromEnv();
-  const url = event.eventType === "complaint.created" ? cfg.newComplaintUrl : cfg.updateComplaintUrl;
+  const recordId = "transferId" in event ? { key: "transferId", value: event.transferId } : { key: "complaintId", value: event.complaintId };
+  const url = webhookUrl(event, cfg);
   if (!url || !cfg.secret) {
     return { kind: "not_configured", message: "Spreadsheet sync is awaiting configuration (n8n webhook URLs or secret not set)." };
   }
@@ -102,7 +116,7 @@ export async function sendToN8n(event: SyncEvent, deps: N8nDeps = {}): Promise<N
   if (res.ok && body?.ok === true) {
     const matches =
       body.eventId === event.eventId &&
-      body.complaintId === event.complaintId &&
+      body[recordId.key] === recordId.value &&
       typeof body.result === "string" &&
       SUCCESS_RESULTS.has(body.result);
     if (matches) {

@@ -22,9 +22,9 @@ export function cleanMultiline(value: string): string {
     .trim();
 }
 
-const NAME_PATTERN = /^[\p{L}\p{M}\p{N} .'’\-_,]+$/u;
+export const NAME_PATTERN = /^[\p{L}\p{M}\p{N} .'’\-_,]+$/u;
 // Phone numbers ("+92 300 1234567", "(021) 3456-7890") or short extensions ("204", "ext 204", "x204").
-const CONTACT_PATTERN = /^(?:\+?\(?\d[\d\s().-]{1,24}\d|(?:ext\.?\s*|x\s*)?\d{2,8})$/i;
+export const CONTACT_PATTERN = /^(?:\+?\(?\d[\d\s().-]{1,24}\d|(?:ext\.?\s*|x\s*)?\d{2,8})$/i;
 
 export interface FormOptions {
   departments: readonly string[];

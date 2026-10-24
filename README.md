@@ -1,6 +1,6 @@
 # IT Helpdesk & Complaint Management
 
-Employees report IT problems through a public form (no login). The IT administrator tracks, updates and resolves
+Employees report IT problems through a public form (no login). Outlets can also record items they send to IT, and IT confirms receipt (or logs items it sends out) with the same safeguards. The IT administrator tracks, updates and resolves
 them in a secure dashboard. MongoDB Atlas is the source of truth; n8n Cloud mirrors every complaint into a Google
 Sheet, so the old Excel workflow keeps working without anyone typing into it.
 
@@ -21,6 +21,7 @@ Employee ──► /complaint ──► POST /api/complaints
                 Google Sheet "IT Complaints"
 Admin ──► /admin (session cookie) ──► edit / resolve ──► same transaction pattern ──► n8n workflow B
 n8n workflow C (every 15 min) ──► POST /api/internal/sync/run ──► retries anything that failed or was missed
+Outlet ──► /transfer ──► same pattern ──► n8n workflow D (Item Transfers tab); Admin presses Accept ──► workflow E
 Admin ──► Sheet check ──► compares every complaint with every sheet row; repairs missing rows and wrong statuses
 ```
 
@@ -39,6 +40,7 @@ sync as done until n8n confirms it.
 | 5 Admin workflow | Dashboard with 5 charts and date filters, searchable/sortable/paginated table, details and edit page with optimistic concurrency, atomic resolve, history |
 | 6 n8n and Sheets | Three importable workflows, webhook auth, idempotent row writes, formula-injection protection |
 | 7 Reliability | Transactional outbox, bounded exponential retries, retry button, audit log, read-only sheet reconciliation with safe repairs |
+| 9 Item transfers ("received and out") | Public form for outlets to log items sent to IT, admin form for items IT sends out, an admin page to accept receipts, outlet list in Settings, own sheet tab and n8n workflows D and E |
 | 8 Quality and docs | Unit, integration and browser tests; deployment, troubleshooting, verification and API documents; Settings editor for departments and categories |
 
 ## Quick start (Windows PowerShell)
@@ -73,7 +75,7 @@ You must set up three external things yourself; until you do, the app shows "Awa
 | `npm run test:unit` | Fast tests, nothing external needed |
 | `npm run test:integration` | Real MongoDB behaviour (downloads a test binary once) |
 | `npm run test:e2e` | Whole lifecycle in a browser (`npx playwright install chromium` first) |
-| `npm run db:init` | Collections, validators, indexes (idempotent) |
+| `npm run db:init` | Collections, validators, indexes (idempotent; re-run after upgrading) |
 | `npm run admin:create` | Create an administrator, or `-- --reset-password` |
 
 ## Design decisions worth knowing
@@ -89,7 +91,7 @@ You must set up three external things yourself; until you do, the app shows "Awa
 ## Project structure
 
 ```
-src/app/            pages (public /complaint, admin /admin/*) and API routes (/api/*)
+src/app/            pages (public /, /complaint, /transfer; admin /admin/*) and API routes (/api/*)
 src/components/     ui/ (base components), forms/, complaints/, dashboard/, layout/
 src/lib/            business logic: complaint-service, complaint-admin-service, dashboard-service,
                     sync-service, reconcile, auth, permissions, n8n, google-sheets, validation, time, range

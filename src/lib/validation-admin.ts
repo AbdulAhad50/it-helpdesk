@@ -6,7 +6,7 @@ import { cleanMultiline } from "@/lib/validation";
 export const WORK_STUCK_MAX = 1000;
 export const RESOLUTION_NOTES_MAX = 3000;
 
-const nullableText = (max: number, label: string) =>
+export const nullableText = (max: number, label: string) =>
   z
     .union([z.string(), z.null()])
     .transform((v) => (v === null ? null : cleanMultiline(v)))
@@ -133,5 +133,7 @@ const optionList = (singular: string) =>
 export const formOptionsSchema = z.object({
   departments: optionList("department"),
   categories: optionList("category"),
+  /** Optional: when absent, the saved outlets are left unchanged. */
+  outlets: optionList("outlet").optional(),
 });
 export type FormOptionsInput = z.output<typeof formOptionsSchema>;

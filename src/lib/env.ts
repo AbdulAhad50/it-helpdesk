@@ -7,12 +7,15 @@ const optionalSecret = z.preprocess(emptyToUndefined, z.string().trim().min(32, 
 
 const envSchema = z.object({
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  MONGODB_URI: z.string().min(1, "mongodb+srv://techahad45:Makhan50@cluster0.d0oyv.mongodb.net/").default("mongodb+srv://techahad45:Makhan50@cluster0.d0oyv.mongodb.net/"),
+  MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
   MONGODB_DB_NAME: z.string().min(1).default("it_helpdesk"),
-  AUTH_SECRET: z.string().min(32, "17846723hfsdjhafgsdjhg7367462387gfjjksdjfksdasdhsjhfhasjhg").default("17846723hfsdjhafgsdjhg7367462387gfjjksdjfksdasdhsjhfhasjhg"),
+  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
 
   N8N_NEW_COMPLAINT_WEBHOOK_URL: optionalUrl,
   N8N_UPDATE_COMPLAINT_WEBHOOK_URL: optionalUrl,
+  /** Item-transfer workflows (optional, independent of the complaint workflows). */
+  N8N_TRANSFER_CREATED_WEBHOOK_URL: optionalUrl,
+  N8N_TRANSFER_UPDATED_WEBHOOK_URL: optionalUrl,
   /** Sent by the app to n8n (X-Webhook-Secret). */
   N8N_WEBHOOK_SECRET: optionalSecret,
   /** Sent by n8n to the app's /api/internal/sync/run (Authorization: Bearer). A different secret, for the opposite direction. */
@@ -50,6 +53,7 @@ export function getIntegrationStatus() {
   const env = getEnv();
   return {
     n8n: Boolean(env.N8N_NEW_COMPLAINT_WEBHOOK_URL && env.N8N_UPDATE_COMPLAINT_WEBHOOK_URL && env.N8N_WEBHOOK_SECRET),
+    n8nTransfers: Boolean(env.N8N_TRANSFER_CREATED_WEBHOOK_URL && env.N8N_TRANSFER_UPDATED_WEBHOOK_URL && env.N8N_WEBHOOK_SECRET),
     googleSheets: Boolean(
       env.GOOGLE_SHEETS_SPREADSHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
     ),

@@ -8,6 +8,7 @@ import { SyncRetryButton } from "@/components/complaints/sync-retry-button";
 import { PriorityBadge, StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getComplaintFull } from "@/lib/complaint-admin-service";
+import { JOB_LABEL } from "@/lib/complaint-view";
 import { isValidComplaintId } from "@/lib/complaint-id";
 import { getDb } from "@/lib/mongodb";
 import { requireAdminPage } from "@/lib/permissions";
@@ -18,7 +19,6 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: (await params).id.toUpperCase() };
 }
 
-const JOB_LABEL = { "complaint.created": "New complaint", "complaint.updated": "Edit", "complaint.resolved": "Resolution" } as const;
 
 function Item({ label, children }: { label: string; children: React.ReactNode }) {
   return (

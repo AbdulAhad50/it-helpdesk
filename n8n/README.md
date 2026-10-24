@@ -7,6 +7,8 @@ when the helpdesk app asks it to. This folder holds three importable workflows:
 |---|---|---|
 | `new-complaint-sync.json` | **A** | Append one row for a new complaint (idempotent) |
 | `resolve-complaint-sync.json` | **B** | Update exactly one existing row (edits and resolutions) |
+| `new-transfer-sync.json` | **D** | Append one row to the *Item Transfers* tab for each item an outlet sends to IT (or IT sends out) |
+| `received-transfer-sync.json` | **E** | Update exactly one *Item Transfers* row when an administrator confirms the item was received |
 | `reconciliation.json` | **C** | Every 15 minutes, ask the app to retry failed or missed syncs. (Comparing the sheet with the database is the app's **Sheet check** page, which reads the sheet itself and needs no n8n workflow.) |
 
 > **Honest status:** these files were generated and checked by automated tests (structure, expressions, and the
@@ -203,3 +205,70 @@ Invoke-RestMethod -Method Post -Uri "<PRODUCTION URL A>" -Headers @{ "X-Webhook-
 * Rotate `N8N_WEBHOOK_SECRET` / `SYNC_RUNNER_SECRET` by changing the value in both n8n and the app environment together.
 * If the service-account key leaks: delete the key in Google Cloud, create a new one, update the n8n credential.
 * Anything the dashboard reports as *needs attention* can be retried from that complaint's page (**Retry sync**). If the cause was a missing sheet row (`row_missing`), restore or add the row first (the Complaint ID must match exactly), then retry; the workflows never insert a row on an update.
+
+## 9. Item transfers ("received and out"): workflows D and E
+
+Outlets tell IT when they send an item (public form `/transfer`); IT can also record items it sends out (admin
+**Item transfers → Record an item**). Each record is mirrored to its own worksheet tab, and when an administrator
+presses **Accept** the matching row is updated. Everything works exactly like complaints: MongoDB is the truth,
+syncs are queued and retried, and a sync only counts once n8n confirms it. The existing retry workflow **C** already
+covers these records too (same endpoint), so there is nothing extra to schedule.
+
+### Set up
+1. In the **same spreadsheet**, add a second tab named exactly **`Item Transfers`**. Row 1 must hold these 16 headers, in this order:
+
+```
+Transfer ID	Direction	Outlet	Name	Email	Contact	Description	Status	Date	Time	Received Date	Received Time	Received By	Receipt Notes	Logged By	Last Updated
+```
+
+2. Import `new-transfer-sync.json` (**D**) and `received-transfer-sync.json` (**E**). Fill each **Config** node with your spreadsheet ID (keep `sheetName` = `Item Transfers`).
+3. Reuse the credentials from section 4: the same *Helpdesk webhook secret* on both Webhook nodes and the same *Helpdesk Google service account* on every Google Sheets node. Keep **Cell Format = RAW**. Activate both.
+4. Copy their two **Production** URLs into the app: `N8N_TRANSFER_CREATED_WEBHOOK_URL` (D) and `N8N_TRANSFER_UPDATED_WEBHOOK_URL` (E). `N8N_WEBHOOK_SECRET` is the same value as for workflows A and B. Redeploy.
+5. In the app, **Settings → Form options → Outlets** holds the dropdown list (the first deploy starts with `Malir` and `Other`).
+
+Until the two transfer URLs are set, item records are still saved and queued; the dashboard shows "Awaiting configuration" for item transfers.
+
+> **Privacy note.** The tab includes *Email* and *Contact* because the form collects them and IT may need to phone the outlet. Anyone with access to the spreadsheet can read them. If you'd rather not store them there, delete those two columns from `TRANSFER_COLUMNS` in `src/lib/sheet-row.ts`, from the validation list in both workflows' *Validate Payload* nodes, and from the sheet.
+
+### Request and response
+Same contract as complaints, with `transferId` instead of `complaintId`:
+
+```json
+{ "schemaVersion": 1, "eventId": "transfer.created:TR-20261018-B3M9", "eventType": "transfer.created",
+  "sentAt": "…", "transferId": "TR-20261018-B3M9", "row": { "Transfer ID": "TR-20261018-B3M9", "Direction": "To IT", "…": "all 16 columns, as text" } }
+```
+`eventType` is `transfer.created` (workflow D) or `transfer.received` (workflow E; `eventId` = `transfer.received:<id>:<version>`).
+Replies are `{ ok:true, result:"appended"|"already_exists"|"updated", eventId, transferId, rowNumber }`, or `404 row_missing`, `409 duplicate_rows`, `400 invalid_payload`, `502 sheets_error` with the same meanings and the same app behaviour as in section 1. The app verifies the echoed `transferId`, so a reply about a different record is never counted as success.
+
+### Workflow D (new item record): nodes
+Identical in shape to workflow A (section 6) with these differences:
+
+| Node | Difference |
+|---|---|
+| **Webhook** | path `/helpdesk/transfer-created` |
+| **Config** | `sheetName` defaults to `Item Transfers` |
+| **Validate Payload** | `eventType = transfer.created`; ID matches `TR-########-XXXX`; `eventId` starts with `transfer.created:<id>`; all 16 transfer columns present as text (≤ 4000 chars); `row["Transfer ID"]` equals `transferId` |
+| **Find Rows by Transfer ID** | lookup column `Transfer ID` = `{{ $json.transferId }}` |
+| **Append Row** | maps the 16 transfer columns explicitly; RAW |
+| **Respond …** | reply bodies carry `transferId` |
+
+### Workflow E (item received): nodes
+Identical in shape to workflow B with these differences:
+
+| Node | Difference |
+|---|---|
+| **Webhook** | path `/helpdesk/transfer-received` |
+| **Validate Payload** | `eventType = transfer.received`; `eventId` starts with `transfer.received:<id>` |
+| **Find Rows by Transfer ID** | exact `Transfer ID` lookup |
+| **Update Row** | matches by `row_number` of the single verified row; writes ONLY `Status`, `Received Date`, `Received Time`, `Received By`, `Receipt Notes`, `Last Updated`. The ID, direction, outlet, name, email, contact, description, date, time and *Logged By* are never overwritten. No Append node exists in this workflow |
+
+### Check D and E on their own
+Post a sample event to D's production URL (PowerShell):
+
+```powershell
+$body = @{ schemaVersion=1; eventId="transfer.created:TR-20261018-TEST"; eventType="transfer.created"; sentAt=(Get-Date).ToUniversalTime().ToString("o"); transferId="TR-20261018-TEST"
+  row=[ordered]@{ "Transfer ID"="TR-20261018-TEST"; "Direction"="To IT"; "Outlet"="Malir"; "Name"="Test User"; "Email"="test@example.com"; "Contact"="ext 204"; "Description"="Webhook test";
+  "Status"="In transit"; "Date"="18-Oct-2026"; "Time"="10:30 AM"; "Received Date"=""; "Received Time"=""; "Received By"=""; "Receipt Notes"=""; "Logged By"="Outlet (public form)"; "Last Updated"="18-Oct-2026 10:30 AM" } } | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method Post -Uri "<PRODUCTION URL D>" -Headers @{ "X-Webhook-Secret"="<secret 1>" } -ContentType "application/json" -Body $body
+```
+Expect `result: appended` and one new row in the *Item Transfers* tab; run it again for `already_exists`. Delete the test row afterwards.

@@ -11,7 +11,7 @@ import { OPTION_MAX_ITEMS } from "@/lib/validation-admin";
 
 const lines = (v: string) => v.split(/\r?\n/);
 
-export function FormOptionsEditor({ departments, categories }: { departments: readonly string[]; categories: readonly string[] }) {
+export function FormOptionsEditor({ departments, categories, outlets }: { departments: readonly string[]; categories: readonly string[]; outlets: readonly string[] }) {
   const router = useRouter();
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -30,11 +30,11 @@ export function FormOptionsEditor({ departments, categories }: { departments: re
       const res = await fetch("/api/admin/settings/form-options", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ departments: lines(String(data.get("departments") ?? "")), categories: lines(String(data.get("categories") ?? "")) }),
+        body: JSON.stringify({ departments: lines(String(data.get("departments") ?? "")), categories: lines(String(data.get("categories") ?? "")), outlets: lines(String(data.get("outlets") ?? "")) }),
       });
       const body = (await res.json().catch(() => null)) as { error?: { message?: string; fieldErrors?: Record<string, string[]> } } | null;
       if (res.ok) {
-        toast.success("Form options saved", { description: "The public complaint form uses them straight away." });
+        toast.success("Form options saved", { description: "The public forms use them straight away." });
         router.refresh();
       } else if (res.status === 401) {
         router.replace("/admin/login");
@@ -49,13 +49,13 @@ export function FormOptionsEditor({ departments, categories }: { departments: re
     setSaving(false);
   }
 
-  const field = (name: "departments" | "categories", label: string, values: readonly string[]) => (
+  const field = (name: "departments" | "categories" | "outlets", label: string, values: readonly string[]) => (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={`opt-${name}`}>{label}</Label>
       <Textarea
         id={`opt-${name}`}
         name={name}
-        rows={12}
+        rows={10}
         defaultValue={values.join("\n")}
         spellCheck={false}
         aria-invalid={errors[name] ? true : undefined}
@@ -77,9 +77,10 @@ export function FormOptionsEditor({ departments, categories }: { departments: re
           <p>{banner}</p>
         </div>
       )}
-      <div className="grid gap-5 md:grid-cols-2">
-        {field("departments", "Departments", departments)}
-        {field("categories", "Problem categories", categories)}
+      <div className="grid gap-5 md:grid-cols-3">
+        {field("departments", "Departments (complaints)", departments)}
+        {field("categories", "Problem categories (complaints)", categories)}
+        {field("outlets", "Outlets (item transfers)", outlets)}
       </div>
       <div><Button type="submit" loading={saving}>{saving ? "Saving…" : "Save options"}</Button></div>
     </form>

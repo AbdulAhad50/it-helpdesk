@@ -62,3 +62,23 @@ export const DISPLAY_TIMEZONE = "Asia/Karachi";
 
 /** Public submission rate limit: N submissions per window, per hashed client IP. */
 export const SUBMISSION_RATE_LIMIT = { limit: 8, windowSeconds: 15 * 60 } as const;
+
+// ── Item transfers ("received and out") ─────────────────────────────────────
+
+/** to_it = an outlet sent an item to IT; from_it = IT sent an item out to an outlet. */
+export const TRANSFER_DIRECTIONS = ["to_it", "from_it"] as const;
+export type TransferDirection = (typeof TRANSFER_DIRECTIONS)[number];
+export const DIRECTION_LABEL: Record<TransferDirection, string> = { to_it: "To IT", from_it: "From IT" };
+
+export const TRANSFER_STATUSES = ["In transit", "Received"] as const;
+export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
+
+/** A starting list. The administrator edits the real list in Settings. */
+export const DEFAULT_OUTLETS = ["Malir", "Other"] as const;
+
+export const TRANSFER_LIMITS = {
+  descriptionMin: 5,
+  descriptionMax: 2000,
+  emailMax: 254,
+  notesMax: 1000,
+} as const;

@@ -148,3 +148,12 @@ export const toSyncJobView = (j: SyncJobDoc): SyncJobView => ({
   lastError: j.lastError,
   at: stamp(j.updatedAt),
 });
+
+/** Display names for sync job types (used on both complaint and transfer pages). */
+export const JOB_LABEL: Record<SyncJobDoc["type"], string> = {
+  "complaint.created": "New complaint",
+  "complaint.updated": "Edit",
+  "complaint.resolved": "Resolution",
+  "transfer.created": "New item record",
+  "transfer.received": "Receipt confirmed",
+};

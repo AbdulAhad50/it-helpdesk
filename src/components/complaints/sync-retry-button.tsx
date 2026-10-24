@@ -6,7 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
-export function SyncRetryButton({ complaintId }: { complaintId: string }) {
+export function SyncRetryButton({ complaintId, endpoint }: { complaintId: string; endpoint?: string }) {
   const router = useRouter();
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -16,7 +16,7 @@ export function SyncRetryButton({ complaintId }: { complaintId: string }) {
     inFlight.current = true;
     setBusy(true);
     try {
-      const res = await fetch(`/api/admin/complaints/${encodeURIComponent(complaintId)}/sync`, { method: "POST" });
+      const res = await fetch(endpoint ?? `/api/admin/complaints/${encodeURIComponent(complaintId)}/sync`, { method: "POST" });
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
       if (res.ok) {
         toast.success("Retry queued", { description: "Check back in a moment for the result." });

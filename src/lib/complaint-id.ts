@@ -13,9 +13,24 @@ export const COMPLAINT_ID_PATTERN = /^IT-\d{8}-[A-HJKMNP-Z2-9]{4}$/;
  * unique index on complaints.complaintId; createComplaint retries on a duplicate-key error.
  */
 export function generateComplaintId(now: Date = new Date()): string {
+  return `IT-${dateStamp(now)}-${randomSuffix()}`;
+}
+
+function randomSuffix(): string {
   let suffix = "";
   for (let i = 0; i < SUFFIX_LENGTH; i++) suffix += ALPHABET[randomInt(ALPHABET.length)];
-  return `IT-${dateStamp(now)}-${suffix}`;
+  return suffix;
+}
+
+export const TRANSFER_ID_PATTERN = /^TR-\d{8}-[A-HJKMNP-Z2-9]{4}$/;
+
+/** "TR-20261018-B3M9": the same scheme as complaint IDs, with a TR prefix. Uniqueness comes from the unique index. */
+export function generateTransferId(now: Date = new Date()): string {
+  return `TR-${dateStamp(now)}-${randomSuffix()}`;
+}
+
+export function isValidTransferId(value: string): boolean {
+  return TRANSFER_ID_PATTERN.test(value);
 }
 
 export function isValidComplaintId(value: string): boolean {

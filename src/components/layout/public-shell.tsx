@@ -7,7 +7,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh">
       <header className="border-b border-line bg-forest-900">
         <div className="mx-auto flex h-16 max-w-5xl items-center px-4 sm:px-6">
-          <Link href="/complaint" className="flex items-center gap-2.5 text-white">
+          <Link href="/" className="flex items-center gap-2.5 text-white">
             <span className="grid size-8 place-items-center rounded-lg bg-mint-200 text-forest-900">
               <ShieldCheck className="size-4.5" aria-hidden />
             </span>

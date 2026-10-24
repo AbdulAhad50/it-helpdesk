@@ -6,14 +6,15 @@ import { ProfileMenu } from "@/components/layout/profile-menu";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDb } from "@/lib/mongodb";
 import { requireAdminPage } from "@/lib/permissions";
-import { getFormOptions } from "@/lib/settings-service";
+import { getFormOptions, getOutlets } from "@/lib/settings-service";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const { admin } = await requireAdminPage();
-  const options = await getFormOptions(await getDb());
+  const db = await getDb();
+  const [options, outlets] = await Promise.all([getFormOptions(db), getOutlets(db)]);
   return (
     <AdminShell
       title="Settings"
@@ -35,11 +36,11 @@ export default async function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Complaint form options</CardTitle>
-            <CardDescription>The departments and problem categories employees can choose from.</CardDescription>
+            <CardTitle>Form options</CardTitle>
+            <CardDescription>The lists employees and outlets can choose from on the public forms.</CardDescription>
           </CardHeader>
           <CardContent>
-            <FormOptionsEditor departments={options.departments} categories={options.categories} />
+            <FormOptionsEditor departments={options.departments} categories={options.categories} outlets={outlets} />
           </CardContent>
         </Card>
 

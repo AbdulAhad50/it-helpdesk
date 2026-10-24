@@ -42,7 +42,7 @@ Never commit the JSON key file and never put it in browser code. In `.env.local`
 
 ## 5. n8n Cloud
 
-Follow **`n8n/README.md` sections 4 to 7**: create the three credentials, import the three workflows, fill the **Config** node in each, activate them, copy the two **Production** webhook URLs.
+Follow **`n8n/README.md` sections 4 to 7**: create the three credentials, import the three workflows, fill the **Config** node in each, activate them, copy the two **Production** webhook URLs. For the item-transfer module also follow **section 9** (a second sheet tab, workflows D and E, two more URLs).
 
 **Local vs production URLs.** n8n has *test* URLs (`/webhook-test/…`, one call while you press "Listen") and *production* URLs (`/webhook/…`, only while the workflow is Active). The app must always use the production ones. Your laptop can call n8n Cloud, so local development syncs for real. But **n8n Cloud cannot reach `http://localhost:3000`**, so Workflow C (the retry runner) can only call your *deployed* app. Locally you don't need C: the app already attempts each sync right after the response, and you can trigger retries by hand (see `n8n/README.md` section 5).
 
@@ -62,11 +62,15 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | `AUTH_SECRET` | yes | 32+ random characters. Keys the hashing of IPs and login emails for rate limits |
 | `N8N_NEW_COMPLAINT_WEBHOOK_URL` | for sync | Production URL of workflow A (https) |
 | `N8N_UPDATE_COMPLAINT_WEBHOOK_URL` | for sync | Production URL of workflow B (https) |
+| `N8N_TRANSFER_CREATED_WEBHOOK_URL` | for item-transfer sync | Production URL of workflow D (https) |
+| `N8N_TRANSFER_UPDATED_WEBHOOK_URL` | for item-transfer sync | Production URL of workflow E (https) |
 | `N8N_WEBHOOK_SECRET` | for sync | 32+ chars. Must equal the n8n *Helpdesk webhook secret* credential value |
 | `SYNC_RUNNER_SECRET` | for retries | 32+ chars, **different** from the one above. Must equal what follows `Bearer ` in n8n's *Helpdesk sync runner secret* credential. Empty = the runner endpoint is disabled |
 | `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SHEETS_WORKSHEET_NAME`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | for Sheet check | Read-only reconciliation (section 4) |
 
 In **production** (Vercel) set the same variables in the project settings, never in code. Treat `MONGODB_URI`, the two secrets and the private key as passwords.
+
+> **Upgrading an existing installation?** Run `npm run db:init` again. The item-transfer module adds a collection, indexes and a wider sync-job validator; until it runs, saving an item record fails with "Document failed validation".
 
 ## 7. Initialise the database and create the first administrator
 
@@ -116,6 +120,7 @@ Notes: complaint submission and admin writes finish their spreadsheet sync *afte
 
 ## 11. Connect production n8n and test it
 
+0. Sign in, open **Settings → Form options** and set your **Outlets** (the dropdown on the item-transfer forms). The first deploy only has `Malir` and `Other`.
 1. In n8n workflow **C**, set **Config → appBaseUrl** to your https app URL and activate it.
 2. Make sure the production webhook URLs and both secrets are set in Vercel, then **redeploy** (environment changes apply to new deployments).
 3. Run the checks in `docs/VERIFICATION.md`, in particular: submit a complaint on the live site and watch the row appear, resolve it from the admin, and run the **Sheet check** page.

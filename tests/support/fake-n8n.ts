@@ -12,6 +12,8 @@ import path from "node:path";
 const wfPath = (f: string) => path.join(__dirname, "../../n8n", f);
 const wfA = JSON.parse(readFileSync(wfPath("new-complaint-sync.json"), "utf8"));
 const wfB = JSON.parse(readFileSync(wfPath("resolve-complaint-sync.json"), "utf8"));
+const wfD = JSON.parse(readFileSync(wfPath("new-transfer-sync.json"), "utf8"));
+const wfE = JSON.parse(readFileSync(wfPath("received-transfer-sync.json"), "utf8"));
 
 const code = (wf: any, name: string) => wf.nodes.find((n: any) => n.name === name).parameters.jsCode as string;
 const wrap = (items: unknown[]) => ({ all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) });
@@ -24,16 +26,27 @@ export interface FakeN8n {
   url: string;
   secret: string;
   sheet: SheetRow[];
+  /** The "Item Transfers" worksheet. */
+  transfers: SheetRow[];
   /** Webhook calls received, in order (event types and IDs only). */
-  calls: { path: string; eventType: string; complaintId: string; status: number }[];
+  calls: { path: string; eventType: string; complaintId: string; status: number }[]; // complaintId holds the transfer ID for transfer events
   reset(): void;
   stop(): Promise<void>;
 }
 
 const UPDATE_COLUMNS = ["Department", "Problem Category", "Priority", "Solved Date", "Resolve Time", "Solve Duration", "Work Stuck Reason", "Status", "Resolution Notes", "Resolved By", "Last Updated"];
+const TRANSFER_UPDATE_COLUMNS = ["Status", "Received Date", "Received Time", "Received By", "Receipt Notes", "Last Updated"];
+
+/** Which workflow answers a URL, and how that workflow identifies and updates rows. */
+function route(url: string) {
+  if (url.endsWith("transfer-created")) return { wf: wfD, create: true, idCol: "Transfer ID", idKey: "transferId", update: TRANSFER_UPDATE_COLUMNS, sheet: "Item Transfers" };
+  if (url.endsWith("transfer-received")) return { wf: wfE, create: false, idCol: "Transfer ID", idKey: "transferId", update: TRANSFER_UPDATE_COLUMNS, sheet: "Item Transfers" };
+  if (url.endsWith("complaint-created")) return { wf: wfA, create: true, idCol: "Complaint ID", idKey: "complaintId", update: UPDATE_COLUMNS, sheet: "IT Complaints" };
+  return { wf: wfB, create: false, idCol: "Complaint ID", idKey: "complaintId", update: UPDATE_COLUMNS, sheet: "IT Complaints" };
+}
 
 export async function startFakeN8n(secret: string, port = 0): Promise<FakeN8n> {
-  const fake: FakeN8n = { url: "", secret, sheet: [], calls: [], reset() { fake.sheet.length = 0; fake.calls.length = 0; }, stop: async () => {} };
+  const fake: FakeN8n = { url: "", secret, sheet: [], transfers: [], calls: [], reset() { fake.sheet.length = 0; fake.transfers.length = 0; fake.calls.length = 0; }, stop: async () => {} };
 
   const server: Server = createServer((req, res) => {
     let raw = "";
@@ -46,35 +59,36 @@ export async function startFakeN8n(secret: string, port = 0): Promise<FakeN8n> {
       if (req.headers["x-webhook-secret"] !== secret) return send(403, { message: "Authorization data is wrong!" });
 
       // Test-only inspection endpoint, protected by the same secret.
-      if (req.method === "GET" && req.url === "/__sheet") return send(200, { rows: fake.sheet, calls: fake.calls });
+      if (req.method === "GET" && req.url === "/__sheet") return send(200, { rows: fake.sheet, transfers: fake.transfers, calls: fake.calls });
 
-      const isCreate = req.url!.endsWith("complaint-created");
-      const wf = isCreate ? wfA : wfB;
+      const r = route(req.url!);
       let body: any;
       try {
         body = JSON.parse(raw);
       } catch {
         return send(400, { ok: false, error: "invalid_payload", message: "not JSON" });
       }
-      const log = (status: number) => fake.calls.push({ path: req.url!, eventType: String(body?.eventType), complaintId: String(body?.complaintId), status });
+      const recordId = String(body?.[r.idKey]);
+      const log = (status: number) => fake.calls.push({ path: req.url!, eventType: String(body?.eventType), complaintId: recordId, status });
       const reply = (status: number, payload: unknown) => (log(status), send(status, payload));
+      const rows = r.idKey === "transferId" ? fake.transfers : fake.sheet;
 
-      const validated = runCode(code(wf, "Validate Payload"), [{ body, spreadsheetId: "s", sheetName: "IT Complaints" }])[0]!.json;
+      const validated = runCode(code(r.wf, "Validate Payload"), [{ body, spreadsheetId: "s", sheetName: r.sheet }])[0]!.json;
       if (!validated.valid) return reply(400, { ok: false, error: "invalid_payload", message: validated.reason });
 
-      const found = fake.sheet.filter((r) => r["Complaint ID"] === validated.complaintId);
-      const ev = runCode(code(wf, "Evaluate Matches"), found.length ? found : [{}], { "Validate Payload": [validated] })[0]!.json;
-      const echo = { eventId: validated.eventId, complaintId: validated.complaintId };
+      const found = rows.filter((row) => row[r.idCol] === validated[r.idKey]);
+      const ev = runCode(code(r.wf, "Evaluate Matches"), found.length ? found : [{}], { "Validate Payload": [validated] })[0]!.json;
+      const echo = { eventId: validated.eventId, [r.idKey]: validated[r.idKey] };
 
-      if (ev.action === "duplicate") return reply(409, { ok: false, error: "duplicate_rows", message: `${ev.matchCount} rows share this Complaint ID` });
-      if (isCreate) {
+      if (ev.action === "duplicate") return reply(409, { ok: false, error: "duplicate_rows", message: `${ev.matchCount} rows share this ID` });
+      if (r.create) {
         if (ev.action === "exists") return reply(200, { ok: true, result: "already_exists", ...echo, rowNumber: ev.rowNumber });
-        fake.sheet.push({ ...validated.row, row_number: fake.sheet.length + 2 });
-        return reply(200, { ok: true, result: "appended", ...echo, rowNumber: fake.sheet.length + 1 });
+        rows.push({ ...validated.row, row_number: rows.length + 2 });
+        return reply(200, { ok: true, result: "appended", ...echo, rowNumber: rows.length + 1 });
       }
-      if (ev.action === "missing") return reply(404, { ok: false, error: "row_missing", message: "No sheet row has this Complaint ID." });
-      const target = fake.sheet.find((r) => r.row_number === ev.rowNumber)!;
-      for (const col of UPDATE_COLUMNS) target[col] = validated.row[col];
+      if (ev.action === "missing") return reply(404, { ok: false, error: "row_missing", message: "No sheet row has this ID." });
+      const target = rows.find((row) => row.row_number === ev.rowNumber)!;
+      for (const col of r.update) target[col] = validated.row[col];
       return reply(200, { ok: true, result: "updated", ...echo, rowNumber: ev.rowNumber });
     });
   });

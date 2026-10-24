@@ -1,6 +1,8 @@
 import { formatDate, formatDuration, formatTime } from "@/lib/time";
 import type { ComplaintDoc } from "@/models/Complaint";
-import type { SyncJobType } from "@/models/SyncJob";
+import { DIRECTION_LABEL } from "@/lib/constants";
+import type { ItemTransferDoc } from "@/models/ItemTransfer";
+import type { ComplaintSyncJobType, TransferSyncJobType } from "@/models/SyncJob";
 
 /** The worksheet's columns, in this exact order. The n8n workflows map each of these explicitly. */
 export const SHEET_COLUMNS = [
@@ -64,7 +66,7 @@ export interface SyncEvent {
   schemaVersion: 1;
   /** Idempotency key. Unique per job. */
   eventId: string;
-  eventType: SyncJobType;
+  eventType: ComplaintSyncJobType;
   sentAt: string;
   complaintId: string;
   /** A full snapshot of the row as it should look NOW, so retries are naturally idempotent. */
@@ -72,7 +74,7 @@ export interface SyncEvent {
 }
 
 export function buildSyncEvent(
-  job: { eventId: string; type: SyncJobType; complaintId: string },
+  job: { eventId: string; type: ComplaintSyncJobType; complaintId: string },
   complaint: ComplaintDoc,
   resolvedByLabel: string | null,
   now: Date = new Date(),
@@ -84,5 +86,76 @@ export function buildSyncEvent(
     sentAt: now.toISOString(),
     complaintId: job.complaintId,
     row: toSheetRow(complaint, resolvedByLabel),
+  };
+}
+
+// ── Item transfers ──────────────────────────────────────────────────────────
+
+/** The "Item Transfers" worksheet's columns, in this exact order. */
+export const TRANSFER_COLUMNS = [
+  "Transfer ID",
+  "Direction",
+  "Outlet",
+  "Name",
+  "Email",
+  "Contact",
+  "Description",
+  "Status",
+  "Date",
+  "Time",
+  "Received Date",
+  "Received Time",
+  "Received By",
+  "Receipt Notes",
+  "Logged By",
+  "Last Updated",
+] as const;
+export type TransferColumn = (typeof TRANSFER_COLUMNS)[number];
+export type TransferRow = Record<TransferColumn, string>;
+
+export function toTransferRow(t: ItemTransferDoc, receivedByLabel: string | null, loggedByLabel: string | null): TransferRow {
+  return {
+    "Transfer ID": t.transferId,
+    Direction: DIRECTION_LABEL[t.direction],
+    Outlet: text(t.outlet),
+    Name: text(t.name),
+    Email: text(t.email),
+    Contact: text(t.contact),
+    Description: text(t.description),
+    Status: t.status,
+    Date: formatDate(t.createdAt),
+    Time: formatTime(t.createdAt),
+    "Received Date": t.receivedAt ? formatDate(t.receivedAt) : "",
+    "Received Time": t.receivedAt ? formatTime(t.receivedAt) : "",
+    "Received By": text(receivedByLabel),
+    "Receipt Notes": text(t.receiptNotes),
+    "Logged By": t.source === "public" ? "Outlet (public form)" : text(loggedByLabel),
+    "Last Updated": `${formatDate(t.updatedAt)} ${formatTime(t.updatedAt)}`,
+  };
+}
+
+export interface TransferSyncEvent {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: TransferSyncJobType;
+  sentAt: string;
+  transferId: string;
+  row: TransferRow;
+}
+
+export function buildTransferSyncEvent(
+  job: { eventId: string; type: TransferSyncJobType; complaintId: string },
+  transfer: ItemTransferDoc,
+  receivedByLabel: string | null,
+  loggedByLabel: string | null,
+  now: Date = new Date(),
+): TransferSyncEvent {
+  return {
+    schemaVersion: 1,
+    eventId: job.eventId,
+    eventType: job.type,
+    sentAt: now.toISOString(),
+    transferId: job.complaintId, // the job stores the record ID in its generic ID field
+    row: toTransferRow(transfer, receivedByLabel, loggedByLabel),
   };
 }
